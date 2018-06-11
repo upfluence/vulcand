@@ -147,13 +147,15 @@ func (m *mux) Init(ss engine.Snapshot) error {
 		for i, beSrvCfg := range bes.Servers {
 			beSrv, err := backend.NewServer(beSrvCfg)
 			if err != nil {
-				return errors.Wrapf(err, "bad server config %v", beSrvCfg.Id)
+				log.Errorf("bad server config %v: %v", beSrvCfg.Id, err)
+				continue
 			}
 			beSrvs[i] = beSrv
 		}
 		beEnt, err := newBackendEntry(bes.Backend, m.options, beSrvs)
 		if err != nil {
-			return errors.Wrapf(err, "failed to create backend entry %v", bes.Backend.Id)
+			log.Errorf("failed to create backend entry %v: %v", bes.Backend.Id, err)
+			continue
 		}
 		m.backends[beKey] = beEnt
 	}
@@ -179,8 +181,12 @@ func (m *mux) Init(ss engine.Snapshot) error {
 		feKey := engine.FrontendKey{fes.Frontend.Id}
 		beEnt, ok := m.backends[engine.BackendKey{Id: fes.Frontend.BackendId}]
 		if !ok {
-			return errors.Errorf("unknown backend %v in frontend %v",
-				fes.Frontend.BackendId, fes.Frontend.Id)
+			log.Errorf(
+				"unknown backend %v in frontend %v",
+				fes.Frontend.BackendId,
+				fes.Frontend.Id,
+			)
+			continue
 		}
 		mwCfgs := make(map[engine.MiddlewareKey]engine.Middleware)
 		for _, mw := range fes.Middlewares {
@@ -188,12 +194,18 @@ func (m *mux) Init(ss engine.Snapshot) error {
 		}
 		fe := frontend.New(fes.Frontend, beEnt.backend, m.options, mwCfgs, m.frontendListeners)
 		if err := m.router.Handle(fes.Frontend.Route, fe); err != nil {
-			return errors.Wrapf(err, "cannot add route %v for frontend %v",
-				fes.Frontend.Route, fes.Frontend.Id)
+			log.Errorf(
+				"cannot add route %v for frontend %v: %v",
+				fes.Frontend.Route,
+				fes.Frontend.Id,
+				err,
+			)
+			continue
 		}
 		m.frontends[feKey] = fe
 		beEnt.frontends[feKey] = fe
 	}
+
 	return nil
 }
 
