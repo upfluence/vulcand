@@ -58,8 +58,9 @@
   version = "1.0.5"
 
 [[constraint]]
-  revision = "21cae4f7b50bbd9523e7fa7e65b68d90b51aee3c"
+  revision = "c2c23f61e9215ff9438ad6c7172ee49227f00f99"
   name = "github.com/vulcand/oxy"
+  source = "https://github.com/AlexisMontagne/oxy.git"
 
 [[constraint]]
   revision = "76eec36fa14229c4b25bb894c2d0e591527af429"

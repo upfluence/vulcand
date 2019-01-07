@@ -4,9 +4,12 @@
 package forward
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -126,6 +129,14 @@ func StateListener(stateListener UrlForwardingStateListener) optSetter {
 	}
 }
 
+// WebsocketConnectionClosedHook defines a hook called when websocket connection is closed
+func WebsocketConnectionClosedHook(hook func(req *http.Request, conn net.Conn)) optSetter {
+	return func(f *Forwarder) error {
+		f.httpForwarder.websocketConnectionClosedHook = hook
+		return nil
+	}
+}
+
 // ResponseModifier defines a response modifier for the HTTP forwarder
 func ResponseModifier(responseModifier func(*http.Response) error) optSetter {
 	return func(f *Forwarder) error {
@@ -188,7 +199,8 @@ type httpForwarder struct {
 
 	log OxyLogger
 
-	bufferPool httputil.BufferPool
+	bufferPool                    httputil.BufferPool
+	websocketConnectionClosedHook func(req *http.Request, conn net.Conn)
 }
 
 const defaultFlushInterval = time.Duration(100) * time.Millisecond
@@ -247,6 +259,8 @@ func New(setters ...optSetter) (*Forwarder, error) {
 		errorHandler: f.errHandler,
 	}
 
+	f.postConfig()
+
 	return f, nil
 }
 
@@ -299,17 +313,17 @@ func (f *httpForwarder) modifyRequest(outReq *http.Request, target *url.URL) {
 	outReq.URL.RawQuery = u.RawQuery
 	outReq.RequestURI = "" // Outgoing request should not have RequestURI
 
-	// Do not pass client Host header unless optsetter PassHostHeader is set.
-	if !f.passHost {
-		outReq.Host = target.Host
-	}
-
 	outReq.Proto = "HTTP/1.1"
 	outReq.ProtoMajor = 1
 	outReq.ProtoMinor = 1
 
 	if f.rewriter != nil {
 		f.rewriter.Rewrite(outReq)
+	}
+
+	// Do not pass client Host header unless optsetter PassHostHeader is set.
+	if !f.passHost {
+		outReq.Host = target.Host
 	}
 }
 
@@ -330,22 +344,22 @@ func (f *httpForwarder) serveWebSocket(w http.ResponseWriter, req *http.Request,
 		// WebSocket is only in http/1.1
 		dialer.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	}
-	targetConn, resp, err := dialer.Dial(outReq.URL.String(), outReq.Header)
+	targetConn, resp, err := dialer.DialContext(outReq.Context(), outReq.URL.String(), outReq.Header)
 	if err != nil {
 		if resp == nil {
 			ctx.errHandler.ServeHTTP(w, req, err)
 		} else {
-			log.Errorf("vulcand/oxy/forward/websocket: Error dialing %q: %v with resp: %d %s", outReq.Host, err, resp.StatusCode, resp.Status)
+			f.log.Errorf("vulcand/oxy/forward/websocket: Error dialing %q: %v with resp: %d %s", outReq.Host, err, resp.StatusCode, resp.Status)
 			hijacker, ok := w.(http.Hijacker)
 			if !ok {
-				log.Errorf("vulcand/oxy/forward/websocket: %s can not be hijack", reflect.TypeOf(w))
+				f.log.Errorf("vulcand/oxy/forward/websocket: %s can not be hijack", reflect.TypeOf(w))
 				ctx.errHandler.ServeHTTP(w, req, err)
 				return
 			}
 
 			conn, _, errHijack := hijacker.Hijack()
 			if errHijack != nil {
-				log.Errorf("vulcand/oxy/forward/websocket: Failed to hijack responseWriter")
+				f.log.Errorf("vulcand/oxy/forward/websocket: Failed to hijack responseWriter")
 				ctx.errHandler.ServeHTTP(w, req, errHijack)
 				return
 			}
@@ -353,7 +367,7 @@ func (f *httpForwarder) serveWebSocket(w http.ResponseWriter, req *http.Request,
 
 			errWrite := resp.Write(conn)
 			if errWrite != nil {
-				log.Errorf("vulcand/oxy/forward/websocket: Failed to forward response")
+				f.log.Errorf("vulcand/oxy/forward/websocket: Failed to forward response")
 				ctx.errHandler.ServeHTTP(w, req, errWrite)
 				return
 			}
@@ -371,17 +385,43 @@ func (f *httpForwarder) serveWebSocket(w http.ResponseWriter, req *http.Request,
 
 	underlyingConn, err := upgrader.Upgrade(w, req, resp.Header)
 	if err != nil {
-		log.Errorf("vulcand/oxy/forward/websocket: Error while upgrading connection : %v", err)
+		f.log.Errorf("vulcand/oxy/forward/websocket: Error while upgrading connection : %v", err)
 		return
 	}
-	defer underlyingConn.Close()
-	defer targetConn.Close()
+	defer func() {
+		underlyingConn.Close()
+		targetConn.Close()
+		if f.websocketConnectionClosedHook != nil {
+			f.websocketConnectionClosedHook(req, underlyingConn.UnderlyingConn())
+		}
+	}()
 
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
 	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error) {
+
+		forward := func(messageType int, reader io.Reader) error {
+			writer, err := dst.NextWriter(messageType)
+			if err != nil {
+				return err
+			}
+			_, err = io.Copy(writer, reader)
+			if err != nil {
+				return err
+			}
+			return writer.Close()
+		}
+
+		src.SetPingHandler(func(data string) error {
+			return forward(websocket.PingMessage, bytes.NewReader([]byte(data)))
+		})
+
+		src.SetPongHandler(func(data string) error {
+			return forward(websocket.PongMessage, bytes.NewReader([]byte(data)))
+		})
+
 		for {
-			msgType, msg, err := src.ReadMessage()
+			msgType, reader, err := src.NextReader()
 
 			if err != nil {
 				m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
@@ -399,11 +439,11 @@ func (f *httpForwarder) serveWebSocket(w http.ResponseWriter, req *http.Request,
 				}
 				errc <- err
 				if m != nil {
-					dst.WriteMessage(websocket.CloseMessage, m)
+					forward(websocket.CloseMessage, bytes.NewReader([]byte(m)))
 				}
 				break
 			}
-			err = dst.WriteMessage(msgType, msg)
+			err = forward(msgType, reader)
 			if err != nil {
 				errc <- err
 				break
@@ -451,6 +491,9 @@ func (f *httpForwarder) copyWebSocketRequest(req *http.Request) (outReq *http.Re
 	outReq.RequestURI = "" // Outgoing request should not have RequestURI
 
 	outReq.URL.Host = req.URL.Host
+	if !f.passHost {
+		outReq.Host = req.URL.Host
+	}
 
 	outReq.Header = make(http.Header)
 	// gorilla websocket use this header to set the request.Host tested in checkSameOrigin
