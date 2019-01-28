@@ -29,7 +29,13 @@ func InitProxyController(ng engine.Engine, stats engine.StatsProvider, router *m
 
 	router.NotFoundHandler = http.HandlerFunc(c.handleError)
 
+	router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	router.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	router.HandleFunc("/debug/pprof/heap", pprof.Index)
 	router.PathPrefix("/debug/pprof/").Handler(http.HandlerFunc(pprof.Index))
+
 	router.HandleFunc("/v1/status", handlerWithBody(c.getStatus)).Methods("GET")
 	router.HandleFunc("/v2/status", handlerWithBody(c.getStatus)).Methods("GET")
 
