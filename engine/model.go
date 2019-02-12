@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"crypto/tls"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -17,21 +16,6 @@ import (
 	"github.com/vulcand/vulcand/plugin"
 	"github.com/vulcand/vulcand/router"
 )
-
-// StatsProvider provides realtime stats abount endpoints, backends and locations
-type StatsProvider interface {
-	FrontendStats(FrontendKey) (*RoundTripStats, error)
-	ServerStats(ServerKey) (*RoundTripStats, error)
-	BackendStats(BackendKey) (*RoundTripStats, error)
-
-	// TopFrontends returns locations sorted by criteria (faulty, slow, most used)
-	// if hostname or backendId is present, will filter out locations for that host or backendId
-	TopFrontends(*BackendKey) ([]Frontend, error)
-
-	// TopServers returns endpoints sorted by criteria (faulty, slow, mos used)
-	// if backendId is not empty, will filter out endpoints for that backendId
-	TopServers(*BackendKey) ([]Server, error)
-}
 
 type KeyPair struct {
 	Key  []byte
@@ -251,8 +235,7 @@ type Frontend struct {
 	Type      string
 	BackendId string
 
-	Stats    *RoundTripStats `json:",omitempty"`
-	Settings interface{}     `json:",omitempty"`
+	Settings interface{} `json:",omitempty"`
 }
 
 // Limits contains various limits one can supply for a location.
@@ -487,7 +470,6 @@ type Middleware struct {
 type Backend struct {
 	Id       string
 	Type     string
-	Stats    *RoundTripStats `json:",omitempty"`
 	Settings interface{}
 }
 
@@ -526,9 +508,8 @@ func (b *Backend) TransportSettings() (TransportSettings, error) {
 
 // Server is a final destination of the request
 type Server struct {
-	Id    string
-	URL   string
-	Stats *RoundTripStats `json:",omitempty"`
+	Id  string
+	URL string
 }
 
 func NewServer(id, u string) (*Server, error) {
@@ -542,7 +523,7 @@ func NewServer(id, u string) (*Server, error) {
 }
 
 func (e *Server) String() string {
-	return fmt.Sprintf("HTTPServer(%s, %s, %s)", e.Id, e.URL, e.Stats)
+	return fmt.Sprintf("HTTPServer(%s, %s)", e.Id, e.URL)
 }
 
 func (e *Server) GetId() string {
@@ -561,84 +542,6 @@ func (l LatencyBrackets) GetQuantile(q float64) (*Bracket, error) {
 		}
 	}
 	return nil, fmt.Errorf("quantile %f not found", q)
-}
-
-// RoundTripStats contain real time statistics about performance of Server or Frontend
-// such as latency, processed and failed requests.
-type RoundTripStats struct {
-	Verdict         Verdict
-	Counters        Counters
-	LatencyBrackets LatencyBrackets
-}
-
-func NewRoundTripStats(m *memmetrics.RTMetrics) (*RoundTripStats, error) {
-	codes := m.StatusCodesCounts()
-
-	sc := make([]StatusCode, 0, len(codes))
-	for k, v := range codes {
-		if v != 0 {
-			sc = append(sc, StatusCode{Code: k, Count: v})
-		}
-	}
-
-	h, err := m.LatencyHistogram()
-	if err != nil {
-		return nil, err
-	}
-
-	return &RoundTripStats{
-		Counters: Counters{
-			NetErrors:   m.NetworkErrorCount(),
-			Total:       m.TotalCount(),
-			Period:      m.CounterWindowSize(),
-			StatusCodes: sc,
-		},
-		LatencyBrackets: NewBrackets(h),
-	}, nil
-}
-
-// NetErroRate calculates the amont of ntwork errors such as time outs and dropped connection
-// that occured in the given time window
-func (e *RoundTripStats) NetErrorRatio() float64 {
-	if e.Counters.Total == 0 {
-		return 0
-	}
-	return (float64(e.Counters.NetErrors) / float64(e.Counters.Total))
-}
-
-// AppErrorRate calculates the ratio of 500 responses that designate internal server errors
-// to success responses - 2xx, it specifically not counts 4xx or any other than 500 error to avoid noisy results.
-func (e *RoundTripStats) AppErrorRatio() float64 {
-	return e.ResponseCodeRatio(http.StatusInternalServerError, http.StatusInternalServerError+1, 200, 300)
-}
-
-// ResponseCodeRatio calculates ratio of count(startA to endA) / count(startB to endB)
-func (e *RoundTripStats) ResponseCodeRatio(startA, endA, startB, endB int) float64 {
-	a := int64(0)
-	b := int64(0)
-	for _, status := range e.Counters.StatusCodes {
-		if status.Code < endA && status.Code >= startA {
-			a += status.Count
-		}
-		if status.Code < endB && status.Code >= startB {
-			b += status.Count
-		}
-	}
-	if b != 0 {
-		return float64(a) / float64(b)
-	}
-	return 0
-}
-
-func (e *RoundTripStats) RequestsPerSecond() float64 {
-	if e.Counters.Period == 0 {
-		return 0
-	}
-	return float64(e.Counters.Total) / float64(e.Counters.Period/time.Second)
-}
-
-func (e *RoundTripStats) String() string {
-	return fmt.Sprintf("%.2f requests/sec, %.2f failures/sec", e.RequestsPerSecond(), e.NetErrorRatio())
 }
 
 type Verdict struct {

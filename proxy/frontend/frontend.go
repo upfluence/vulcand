@@ -12,29 +12,26 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/vulcand/oxy/buffer"
 	"github.com/vulcand/oxy/forward"
-	"github.com/vulcand/oxy/memmetrics"
 	"github.com/vulcand/oxy/roundrobin"
 	"github.com/vulcand/oxy/stream"
 	"github.com/vulcand/vulcand/engine"
 	"github.com/vulcand/vulcand/plugin"
 	"github.com/vulcand/vulcand/proxy"
 	"github.com/vulcand/vulcand/proxy/backend"
-	"github.com/vulcand/vulcand/proxy/rtmcollect"
 )
 
 // T represents a frontend instance. It implements http.Handler interface to be
 // used with an http.Server. The implementation takes measures to collect round
 // trip metrics for the frontend and all servers of an associated backend.
 type T struct {
-	mu         sync.Mutex
-	ready      bool
-	trustXFDH  bool
-	cfg        engine.Frontend
-	mwCfgs     map[engine.MiddlewareKey]engine.Middleware
-	backend    *backend.T
-	handler    http.Handler
-	rtmCollect *rtmcollect.T
-	listeners  plugin.FrontendListeners
+	mu        sync.Mutex
+	ready     bool
+	trustXFDH bool
+	cfg       engine.Frontend
+	mwCfgs    map[engine.MiddlewareKey]engine.Middleware
+	backend   *backend.T
+	handler   http.Handler
+	listeners plugin.FrontendListeners
 }
 
 // New returns a new frontend instance.
@@ -133,63 +130,6 @@ func (fe *T) OnBackendMutated() {
 	fe.mu.Unlock()
 }
 
-// CfgWithStats returns the frontend storage config with associated round trip
-// stats.
-func (fe *T) CfgWithStats() (engine.Frontend, bool, error) {
-	fe.mu.Lock()
-	rtmCollect := fe.rtmCollect
-	feCfg := fe.cfg
-	fe.mu.Unlock()
-
-	if rtmCollect == nil {
-		return engine.Frontend{}, false, nil
-	}
-	var err error
-	if feCfg.Stats, err = rtmCollect.RTStats(); err != nil {
-		return engine.Frontend{}, false, errors.Wrap(err, "failed to get stats")
-	}
-	return feCfg, true, nil
-}
-
-// AppendRTMTo appends frontend round-trip metrics to an aggregate.
-func (fe *T) AppendRTMTo(aggregate *memmetrics.RTMetrics) {
-	fe.mu.Lock()
-	rtmCollect := fe.rtmCollect
-	fe.mu.Unlock()
-
-	if rtmCollect == nil {
-		return
-	}
-	rtmCollect.AppendFeRTMTo(aggregate)
-}
-
-// AppendBeSrvRTMTo appends round-trip metrics of a backend server to aggregate.
-// It does nothing if a server if the specified URL key does not exist.
-func (fe *T) AppendBeSrvRTMTo(aggregate *memmetrics.RTMetrics, beSrvURLKey backend.SrvURLKey) {
-	fe.mu.Lock()
-	rtmCollect := fe.rtmCollect
-	fe.mu.Unlock()
-
-	if rtmCollect == nil {
-		return
-	}
-	rtmCollect.AppendBeSrvRTMTo(aggregate, beSrvURLKey)
-}
-
-// AppendAllBeSrvRTMsTo appends round-trip metrics of all backend servers of
-// the backend associated with the frontend to the respective aggregates. If an
-// aggregate for a server is missing from the map then a new one is created.
-func (fe *T) AppendAllBeSrvRTMsTo(aggregates map[backend.SrvURLKey]rtmcollect.BeSrvEntry) {
-	fe.mu.Lock()
-	rtmCollect := fe.rtmCollect
-	fe.mu.Unlock()
-
-	if rtmCollect == nil {
-		return
-	}
-	rtmCollect.AppendAllBeSrvRTMsTo(aggregates)
-}
-
 // ServeHTTP implements http.Handler.
 func (fe *T) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fe.getHandler().ServeHTTP(w, r)
@@ -236,14 +176,8 @@ func (fe *T) rebuild() error {
 		forward.StreamingFlushInterval(time.Duration(httpCfg.StreamFlushIntervalNanoSecs)*time.Nanosecond),
 		forward.StateListener(fe.listeners.ConnTck))
 
-	// Add a round-trip metrics collector to the handlers chain.
-	rc, err := rtmcollect.New(fwd)
-	if err != nil {
-		return errors.Wrap(err, "cannot create rtmCollect")
-	}
-
 	// Add a load balancer to the handlers chain.
-	rr, err := roundrobin.New(rc, roundrobin.RoundRobinRequestRewriteListener(fe.listeners.RrRewriteListener))
+	rr, err := roundrobin.New(fwd, roundrobin.RoundRobinRequestRewriteListener(fe.listeners.RrRewriteListener))
 	if err != nil {
 		return errors.Wrap(err, "cannot create load balancer")
 	}
@@ -297,15 +231,14 @@ func (fe *T) rebuild() error {
 		return errors.Wrap(err, "failed to create handler")
 	}
 
-	syncServers(rb, beSrvs, rc)
+	syncServers(rb, beSrvs)
 
 	fe.handler = topHandler
-	fe.rtmCollect = rc
 	return nil
 }
 
 // syncServers syncs backend servers and rebalancer state.
-func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv, watcher *rtmcollect.T) {
+func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv) {
 	// First, collect and parse servers to add
 	newServers := make(map[backend.SrvURLKey]backend.Srv)
 	for _, newBeSrv := range beSrvs {
@@ -324,7 +257,6 @@ func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv, watcher 
 			if err := balancer.UpsertServer(newBeSrv.URL()); err != nil {
 				log.Errorf("Failed to add %v, err: %s", newBeSrv.URL(), err)
 			}
-			watcher.UpsertServer(newBeSrv)
 		}
 	}
 
@@ -334,7 +266,6 @@ func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv, watcher 
 			if err := balancer.RemoveServer(oldBeSrvURL); err != nil {
 				log.Errorf("Failed to remove %v, err: %v", oldBeSrvURL, err)
 			}
-			watcher.RemoveServer(oldBeSrvURLKey)
 		}
 	}
 }

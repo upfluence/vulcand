@@ -7,25 +7,22 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
-	"github.com/vulcand/vulcand/anomaly"
 	"github.com/vulcand/vulcand/engine"
 	"github.com/vulcand/vulcand/plugin"
 	"github.com/vulcand/vulcand/router"
 )
 
 type ProxyController struct {
-	ng    engine.Engine
-	stats engine.StatsProvider
+	ng engine.Engine
 }
 
-func InitProxyController(ng engine.Engine, stats engine.StatsProvider, router *mux.Router) {
-	c := &ProxyController{ng: ng, stats: stats}
+func InitProxyController(ng engine.Engine, router *mux.Router) {
+	c := &ProxyController{ng: ng}
 
 	router.NotFoundHandler = http.HandlerFunc(c.handleError)
 
@@ -53,10 +50,6 @@ func InitProxyController(ng engine.Engine, stats engine.StatsProvider, router *m
 	router.HandleFunc("/v2/listeners", handlerWithBody(c.upsertListener)).Methods("POST")
 	router.HandleFunc("/v2/listeners/{id}", handlerWithBody(c.getListener)).Methods("GET")
 	router.HandleFunc("/v2/listeners/{id}", handlerWithBody(c.deleteListener)).Methods("DELETE")
-
-	// Top provides top-style realtime statistics about frontends and servers
-	router.HandleFunc("/v2/top/frontends", handlerWithBody(c.getTopFrontends)).Methods("GET")
-	router.HandleFunc("/v2/top/servers", handlerWithBody(c.getTopServers)).Methods("GET")
 
 	// Frontends
 	router.HandleFunc("/v2/frontends", handlerWithBody(c.upsertFrontend)).Methods("POST")
@@ -130,27 +123,6 @@ func (c *ProxyController) getFrontends(w http.ResponseWriter, r *http.Request, p
 	}
 	return Response{
 		"Frontends": fs,
-	}, nil
-}
-
-func (c *ProxyController) getTopFrontends(w http.ResponseWriter, r *http.Request, params map[string]string, body []byte) (interface{}, error) {
-	limit, err := strconv.Atoi(formGet(r.Form, "limit", "0"))
-	if err != nil {
-		return nil, err
-	}
-	var bk *engine.BackendKey
-	if key := r.Form.Get("backendId"); key != "" {
-		bk = &engine.BackendKey{Id: key}
-	}
-	frontends, err := c.stats.TopFrontends(bk)
-	if err != nil {
-		return nil, err
-	}
-	if limit > 0 && limit < len(frontends) {
-		frontends = frontends[:limit]
-	}
-	return Response{
-		"Frontends": frontends,
 	}, nil
 }
 
@@ -228,30 +200,6 @@ func (c *ProxyController) getBackends(w http.ResponseWriter, r *http.Request, pa
 	return Response{
 		"Backends": backends,
 	}, err
-}
-
-func (c *ProxyController) getTopServers(w http.ResponseWriter, r *http.Request, params map[string]string, body []byte) (interface{}, error) {
-	limit, err := strconv.Atoi(formGet(r.Form, "limit", "0"))
-	if err != nil {
-		return nil, err
-	}
-	var bk *engine.BackendKey
-	if key := r.Form.Get("backendId"); key != "" {
-		bk = &engine.BackendKey{Id: key}
-	}
-	servers, err := c.stats.TopServers(bk)
-	if err != nil {
-		return nil, err
-	}
-	if bk != nil {
-		anomaly.MarkServerAnomalies(servers)
-	}
-	if limit > 0 && limit < len(servers) {
-		servers = servers[:limit]
-	}
-	return Response{
-		"Servers": servers,
-	}, nil
 }
 
 func (c *ProxyController) getBackend(w http.ResponseWriter, r *http.Request, params map[string]string, body []byte) (interface{}, error) {

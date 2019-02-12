@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mailgun/metrics"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -41,10 +40,6 @@ type Options struct {
 	EndpointReadTimeout time.Duration
 
 	SealKey string
-
-	StatsdAddr    string
-	StatsdPrefix  string
-	MetricsClient metrics.Client
 
 	DefaultListener    bool
 	TrustForwardHeader bool
@@ -132,9 +127,6 @@ func ParseCommandLine() (options Options, err error) {
 	flag.DurationVar(&options.EndpointReadTimeout, "endpointReadTimeout", time.Duration(50)*time.Second, "Endpoint read timeout")
 
 	flag.StringVar(&options.SealKey, "sealKey", "", "Seal key used to store encrypted data in the backend")
-
-	flag.StringVar(&options.StatsdPrefix, "statsdPrefix", "", "Statsd prefix will be appended to the metrics emitted by this instance")
-	flag.StringVar(&options.StatsdAddr, "statsdAddr", "", "Statsd address in form of 'host:port'")
 
 	flag.BoolVar(&options.DefaultListener, "default-listener", true, "Enables the default listener on startup (Default value: true)")
 	flag.BoolVar(&options.TrustForwardHeader, "trustForwardHeader", false, "Whether X-Forwarded-XXX headers should be trusted")

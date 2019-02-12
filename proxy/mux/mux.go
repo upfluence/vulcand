@@ -3,13 +3,8 @@ package mux
 import (
 	"fmt"
 	"net/url"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
-	"time"
 
-	"github.com/mailgun/metrics"
 	"github.com/mailgun/timetools"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -22,7 +17,6 @@ import (
 	"github.com/vulcand/vulcand/proxy/backend"
 	"github.com/vulcand/vulcand/proxy/connctr"
 	"github.com/vulcand/vulcand/proxy/frontend"
-	"github.com/vulcand/vulcand/proxy/rtmcollect"
 	"github.com/vulcand/vulcand/proxy/server"
 	"github.com/vulcand/vulcand/router"
 	"github.com/vulcand/vulcand/stapler"
@@ -275,22 +269,6 @@ func (m *mux) Start() error {
 				return
 			case e := <-m.stapleUpdatesC:
 				m.processStapleUpdate(e)
-			}
-		}
-	}()
-
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
-		for {
-			select {
-			case <-m.stopC:
-				log.Infof("%v stop emitting metrics", m)
-				return
-			case <-time.After(time.Second):
-				if err := m.emitMetrics(); err != nil {
-					log.Errorf("%v failed to emit metrics, err=%v", m, err)
-				}
 			}
 		}
 	}()
@@ -637,135 +615,6 @@ func (m *mux) processStapleUpdate(e *stapler.StapleUpdated) {
 	}
 }
 
-func (m *mux) emitMetrics() error {
-	c := m.options.MetricsClient
-
-	// Emit connection stats
-	counts := m.incomingConnTracker.Counts()
-	for state, values := range counts {
-		for addr, count := range values {
-			c.Gauge(c.Metric("conns", addr, state.String()), count, 1)
-		}
-	}
-
-	// Emit frontend metrics stats
-	frontends, err := m.TopFrontends(nil)
-	if err != nil {
-		return errors.Wrap(err, "failed to get top frontends")
-	}
-	for _, fe := range frontends {
-		fem := c.Metric("frontend", strings.Replace(fe.Id, ".", "_", -1))
-		s := fe.Stats
-		for _, scode := range s.Counters.StatusCodes {
-			// response codes counters
-			c.Gauge(fem.Metric("code", strconv.Itoa(scode.Code)), scode.Count, 1)
-		}
-		// network errors
-		c.Gauge(fem.Metric("neterr"), s.Counters.NetErrors, 1)
-		// requests
-		c.Gauge(fem.Metric("reqs"), s.Counters.Total, 1)
-
-		// round trip times in microsecond resolution
-		for _, b := range s.LatencyBrackets {
-			c.Gauge(fem.Metric("rtt", strconv.Itoa(int(b.Quantile*10.0))), int64(b.Value/time.Microsecond), 1)
-		}
-	}
-	return nil
-}
-
-func (m *mux) FrontendStats(feKey engine.FrontendKey) (*engine.RoundTripStats, error) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	fe, ok := m.frontends[feKey]
-	if !ok {
-		return nil, errors.Errorf("%v not found", feKey)
-	}
-	feCfg, ok, err := fe.CfgWithStats()
-	if err != nil {
-		return nil, errors.Wrapf(err, "frontend %v RT stats not available", feKey)
-	}
-	if !ok {
-		return nil, errors.Errorf("frontend %v RT not collected", feKey)
-	}
-	return feCfg.Stats, nil
-}
-
-func (m *mux) BackendStats(beKey engine.BackendKey) (*engine.RoundTripStats, error) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	beEnt, ok := m.backends[beKey]
-	if !ok {
-		return nil, errors.Errorf("backend %v not found", beKey)
-	}
-
-	aggregate := rtmcollect.NewRTMetrics()
-	for _, fe := range beEnt.frontends {
-		fe.AppendRTMTo(aggregate)
-	}
-	return engine.NewRoundTripStats(aggregate)
-}
-
-func (m *mux) ServerStats(beSrvKey engine.ServerKey) (*engine.RoundTripStats, error) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	beEnt, ok := m.backends[beSrvKey.BackendKey]
-	if !ok {
-		return nil, errors.Errorf("backend %v not found", beSrvKey.BackendKey)
-	}
-	beSrv, ok := beEnt.backend.Server(beSrvKey)
-	if !ok {
-		return nil, errors.Errorf("server %v not found", beSrvKey)
-	}
-
-	aggregates := rtmcollect.NewRTMetrics()
-	for _, fe := range beEnt.frontends {
-		fe.AppendBeSrvRTMTo(aggregates, beSrv.URLKey())
-	}
-	return engine.NewRoundTripStats(aggregates)
-}
-
-// TopFrontends returns locations sorted by criteria (faulty, slow, most used)
-// if hostname or backendId is present, will filter out locations for that host or backendId
-func (m *mux) TopFrontends(beKey *engine.BackendKey) ([]engine.Frontend, error) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	feCfgs := []engine.Frontend{}
-	for _, fe := range m.filteredFrontends(beKey) {
-		feCfg, ok, err := fe.CfgWithStats()
-		if err != nil {
-			return nil, errors.Wrapf(err, "cannot get stats from %v", fe.Key())
-		}
-		if !ok {
-			continue
-		}
-		feCfgs = append(feCfgs, feCfg)
-	}
-	sort.Stable(&frontendSorter{frontends: feCfgs})
-	return feCfgs, nil
-}
-
-// TopServers returns endpoints sorted by criteria (faulty, slow, most used)
-// if backendId is not empty, will filter out endpoints for that backendId
-func (m *mux) TopServers(beKey *engine.BackendKey) ([]engine.Server, error) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	aggregates := make(map[backend.SrvURLKey]rtmcollect.BeSrvEntry)
-	for _, fe := range m.filteredFrontends(beKey) {
-		fe.AppendAllBeSrvRTMsTo(aggregates)
-	}
-	beSrvCfgs := make([]engine.Server, 0, len(aggregates))
-	for _, beSrvEnt := range aggregates {
-		beSrvCfgs = append(beSrvCfgs, beSrvEnt.CfgWithStats())
-	}
-	sort.Stable(&serverSorter{es: beSrvCfgs})
-	return beSrvCfgs, nil
-}
-
 func (m *mux) filteredFrontends(beKey *engine.BackendKey) map[engine.FrontendKey]*frontend.T {
 	if beKey != nil {
 		if beEnt, ok := m.backends[*beKey]; ok {
@@ -773,53 +622,6 @@ func (m *mux) filteredFrontends(beKey *engine.BackendKey) map[engine.FrontendKey
 		}
 	}
 	return m.frontends
-}
-
-type frontendSorter struct {
-	frontends []engine.Frontend
-}
-
-func (s *frontendSorter) Len() int {
-	return len(s.frontends)
-}
-
-func (s *frontendSorter) Swap(i, j int) {
-	s.frontends[i], s.frontends[j] = s.frontends[j], s.frontends[i]
-}
-
-func (s *frontendSorter) Less(i, j int) bool {
-	return cmpStats(s.frontends[i].Stats, s.frontends[j].Stats)
-}
-
-type serverSorter struct {
-	es []engine.Server
-}
-
-func (s *serverSorter) Len() int {
-	return len(s.es)
-}
-
-func (s *serverSorter) Swap(i, j int) {
-	s.es[i], s.es[j] = s.es[j], s.es[i]
-}
-
-func (s *serverSorter) Less(i, j int) bool {
-	return cmpStats(s.es[i].Stats, s.es[j].Stats)
-}
-
-func cmpStats(s1, s2 *engine.RoundTripStats) bool {
-	// Items that have network errors go first
-	if s1.NetErrorRatio() != 0 || s2.NetErrorRatio() != 0 {
-		return s1.NetErrorRatio() > s2.NetErrorRatio()
-	}
-
-	// Items that have application level errors go next
-	if s1.AppErrorRatio() != 0 || s2.AppErrorRatio() != 0 {
-		return s1.AppErrorRatio() > s2.AppErrorRatio()
-	}
-
-	// More highly loaded items go next
-	return s1.Counters.Total > s2.Counters.Total
 }
 
 type muxState int
@@ -843,9 +645,6 @@ func (s muxState) String() string {
 }
 
 func setDefaults(o proxy.Options) proxy.Options {
-	if o.MetricsClient == nil {
-		o.MetricsClient = metrics.NewNop()
-	}
 	if o.TimeProvider == nil {
 		o.TimeProvider = &timetools.RealTime{}
 	}

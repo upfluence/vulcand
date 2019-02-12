@@ -38,14 +38,12 @@ type rawFrontend struct {
 	Type      string
 	BackendId string
 	Settings  json.RawMessage
-	Stats     *RoundTripStats
 }
 
 type rawBackend struct {
 	Id       string
 	Type     string
 	Settings json.RawMessage
-	Stats    *RoundTripStats
 }
 
 type RawMiddleware struct {
@@ -169,7 +167,6 @@ func FrontendFromJSON(router router.Router, in []byte, id ...string) (*Frontend,
 	if err != nil {
 		return nil, err
 	}
-	f.Stats = rf.Stats
 	return f, nil
 }
 
@@ -245,7 +242,6 @@ func BackendFromJSON(in []byte, id ...string) (*Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	b.Stats = rb.Stats
 	return b, nil
 }
 

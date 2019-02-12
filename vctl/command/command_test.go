@@ -49,7 +49,7 @@ func (s *CmdSuite) SetUpTest(c *C) {
 	s.sup = sv
 
 	router := mux.NewRouter()
-	api.InitProxyController(s.ng, sv, router)
+	api.InitProxyController(s.ng, router)
 	s.testServer = httptest.NewServer(router)
 
 	s.out = &bytes.Buffer{}
@@ -72,10 +72,6 @@ func (s *CmdSuite) run(params ...string) string {
 	s.cmd = &Command{registry: registry.GetRegistry(), out: s.out, vulcanUrl: s.testServer.URL}
 	s.cmd.Run(args)
 	return strings.Replace(s.out.String(), "\n", " ", -1)
-}
-
-func (s *CmdSuite) TestStatus(c *C) {
-	c.Assert(s.run("top", "--refresh", "0"), Matches, ".*Frontend.*")
 }
 
 func (s *CmdSuite) TestHostCRUD(c *C) {

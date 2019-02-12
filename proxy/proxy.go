@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/mailgun/metrics"
 	"github.com/mailgun/timetools"
 	log "github.com/sirupsen/logrus"
 	"github.com/vulcand/vulcand/conntracker"
@@ -18,8 +17,6 @@ import (
 )
 
 type Proxy interface {
-	engine.StatsProvider
-
 	Init(snapshot engine.Snapshot) error
 
 	UpsertHost(engine.Host) error
@@ -54,7 +51,6 @@ type Proxy interface {
 }
 
 type Options struct {
-	MetricsClient             metrics.Client
 	DialTimeout               time.Duration
 	ReadTimeout               time.Duration
 	WriteTimeout              time.Duration

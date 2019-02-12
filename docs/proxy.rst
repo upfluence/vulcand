@@ -25,12 +25,12 @@ Vulcand hosts contain associated information and settings, such as SNI options a
 
 Listener
 ~~~~~~~~
-Listener is a dynamic socket that can be attached or detached to Vulcand without restart. Vulcand can have multiple http and https listeners 
+Listener is a dynamic socket that can be attached or detached to Vulcand without restart. Vulcand can have multiple http and https listeners
 attached to it, providing service on multiple interfaces and protocols.
 
 Frontend
 ~~~~~~~~
-Frontends match the requests and forward it to the backends. 
+Frontends match the requests and forward it to the backends.
 Each frontend defines a route - a special expression that matches the request, e.g. ``Path("/v1/path")``.
 Frontends are linked to backend and Vulcand will use the servers from this backend to serve the request.
 
@@ -59,7 +59,7 @@ To use this feature, users generate ``sealKey`` using command line utility and p
 Failover Predicates
 ~~~~~~~~~~~~~~~~~~~
 
-Sometimes it is handy to retry the request on error. The good question is what constitutes an error? Sometimes it's a read/write timeout, and somethimes it's a special error code. 
+Sometimes it is handy to retry the request on error. The good question is what constitutes an error? Sometimes it's a read/write timeout, and somethimes it's a special error code.
 Failover predicates are expressions that define when the request can be failed over, e.g.  ``IsNetworkError() && Attempts <= 2``
 
 .. code-block:: bash
@@ -135,7 +135,7 @@ Adding and removing servers to the backend will change the traffic in real-time,
 **Backend settings**
 
 Backends define the configuration options to the servers, such as the amount of idle connections and timeouts.
-Backend options are represented as JSON dictionary. 
+Backend options are represented as JSON dictionary.
 
 .. code-block:: javascript
 
@@ -172,7 +172,7 @@ You can update the settings at any time, that will initiate graceful reload of t
 
 **Server heartbeat**
 
-Heartbeat allows to automatically de-register the server when it crashes or wishes to be de-registered. 
+Heartbeat allows to automatically de-register the server when it crashes or wishes to be de-registered.
 Server can heartbeat it's presense, and once the heartbeat is stopped, Vulcand will gracefully remove the server from the rotation.
 
 .. code-block:: etcd
@@ -204,7 +204,7 @@ Frontends
 If request matches a frontend route it is redirected to one of the servers of the associated backend.
 It is recommended to specify a frontend per API method, e.g. ``Host("api.example.com") && Method("POST") && Path("/v1/users")``.
 
-Route can be any valid route expression, e.g. ``Path("/v1/users")`` will match for all hosts and 
+Route can be any valid route expression, e.g. ``Path("/v1/users")`` will match for all hosts and
 ``Host("api.example.com") && Path("/v1/users")`` will match only for ``api.example.com``.
 
 .. code-block:: etcd
@@ -312,7 +312,7 @@ Certificates are stored as encrypted JSON dictionaries. Updating a certificate w
 
 **OCSP**
 
-`Online Certificate Status Protocol <http://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol>`_ is a protocol for certificate revocation checking. Vulcand checks OCSP status in the background and 
+`Online Certificate Status Protocol <http://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol>`_ is a protocol for certificate revocation checking. Vulcand checks OCSP status in the background and
 includes the OCSP staple response in the TLS handshake when this feature turned on.
 
 Read more about turning OCSP for hosts in `OCSP`_ section of this document.
@@ -394,7 +394,7 @@ Vulcand does not require host-specific routing, e.g. the frontend with the follo
   PathRegexp("/.*")
 
 .. code-block:: bash
-   
+
    curl -H "Host:example.com" http://localhost/hello # works
    curl -H "Host:hello.com" http://localhost/hello   # also works
 
@@ -406,7 +406,7 @@ In case if you need Host-based routing (just as Apache's ``VHost`` or Nginx's ``
   Host("example.com") && PathRegexp("/.*")
 
 .. code-block:: bash
-   
+
    curl -H "Host:example.com" http://localhost/hello # works
    curl -H "Host:hello.com" http://localhost/hello   # not found
 
@@ -466,7 +466,7 @@ Vulcand can have multiple listeners attached and share the same listener.
 
 **Listener scopes**
 
-Listeners support scopes as the way to limit operational scope of socket. 
+Listeners support scopes as the way to limit operational scope of socket.
 Scope field uses Vulcand `Routing Language`_.
 Here's an example of Listener that only allows requests with hostname ``example.com``
 
@@ -498,7 +498,7 @@ Middlewares
 .. figure::  _static/img/VulcanMiddleware.png
    :align:   left
 
-Middlewares are allowed to observe, modify and intercept http requests and responses. Vulcand provides several middlewares. 
+Middlewares are allowed to observe, modify and intercept http requests and responses. Vulcand provides several middlewares.
 Users can write their own middlewares for Vulcand in Go.
 
 To specify execution order of the middlewares, one can define the priority. Middlewares with smaller priority values will be executed first.
@@ -509,7 +509,7 @@ Rate Limits
 Vulcan supports controlling request rates. Rate can be checked against different request parameters and is set up via limiting variable.
 
 .. code-block:: bash
-   
+
    client.ip                       # client ip
    request.header.X-Special-Header # request header
 
@@ -517,44 +517,44 @@ Adding and removing middlewares will modify the frontend behavior in real time. 
 
 .. code-block:: etcd
 
- # Update or set rate limit the request to frontend "f1" to 1 request per second per client ip 
+ # Update or set rate limit the request to frontend "f1" to 1 request per second per client ip
  # with bursts up to 3 requests per second.
  etcdctl set /vulcand/frontends/f1/middlewares/rl1 '{
-    "Priority": 0, 
-    "Type": "ratelimit", 
+    "Priority": 0,
+    "Type": "ratelimit",
     "Middleware":{
-        "Requests":1, 
-        "PeriodSeconds":1, 
-        "Burst":3, 
+        "Requests":1,
+        "PeriodSeconds":1,
+        "Burst":3,
         "Variable": "client.ip"}}'
 
 
 .. code-block:: cli
 
- # Update or set rate limit the request to frontend "f1" to 1 request per second per client ip 
+ # Update or set rate limit the request to frontend "f1" to 1 request per second per client ip
  # with bursts up to 3 requests per second.
  vctl ratelimit upsert -id=rl1 -frontend=f1 -requests=1 -burst=3 -period=1 --priority=0
 
 .. code-block:: api
 
- # Update or set rate limit the request to frontend "f1" to 1 request per second per client ip 
+ # Update or set rate limit the request to frontend "f1" to 1 request per second per client ip
  # with bursts up to 3 requests per second.
  curl -X POST -H "Content-Type: application/json" http://localhost:8182/v2/frontends/f1/middlewares\
       -d '{"Middleware": {
-        "Priority": 0, 
+        "Priority": 0,
         "Type": "ratelimit",
         "Id": "rl1",
         "Middleware":{
-            "Requests":1, 
-            "PeriodSeconds":1, 
-            "Burst":3, 
+            "Requests":1,
+            "PeriodSeconds":1,
+            "Burst":3,
             "Variable": "client.ip"}}}'
 
 
 **Programmatic rate limits**
 
 Sometimes you have to change rate limits based on various parameters, e.g. account billing plan. Instead of setting hard-coded rate limits, Vulcand can accept rate limits
-set via headers for each individual request. 
+set via headers for each individual request.
 
 Each HTTP header should contain a JSON-encoded list with rates in the following format:
 
@@ -563,14 +563,14 @@ Each HTTP header should contain a JSON-encoded list with rates in the following 
   [{"PeriodSeconds": 1, "Requests": 2, "Burst": 3}]
 
 
-That means that you should write a middleware that sets the header to the right value and place it before the ratelimit middleware. 
+That means that you should write a middleware that sets the header to the right value and place it before the ratelimit middleware.
 
 After it's done you can activate the ratelimit plugin:
 
 .. code-block:: etcd
 
  # Update or set rate limit the request to frontend "f1" to get the rates from the X-Custom-Rates.
- # in case if the header is missing, ratelimit will default to 1 request per second per client ip  
+ # in case if the header is missing, ratelimit will default to 1 request per second per client ip
  # with bursts up to 3 requests per second.
  etcdctl set /vulcand/frontends/f1/middlewares/rl1 '{
     "Id":"rl1",
@@ -587,14 +587,14 @@ After it's done you can activate the ratelimit plugin:
 .. code-block:: cli
 
  # Update or set rate limit the request to frontend "f1" to get the rates from the X-Custom-Rates.
- # in case if the header is missing, ratelimit will default to 1 request per second per client ip  
+ # in case if the header is missing, ratelimit will default to 1 request per second per client ip
  # with bursts up to 3 requests per second.
  vctl ratelimit upsert -id=rl1 -frontend=f1 -requests=1 -burst=3 -period=1 --priority=0 --rateVar="request.header.X-Custom-Rates"
 
 .. code-block:: api
 
  # Update or set rate limit the request to frontend "f1" to get the rates from the X-Custom-Rates.
- # in case if the header is missing, ratelimit will default to 1 request per second per client ip  
+ # in case if the header is missing, ratelimit will default to 1 request per second per client ip
  # with bursts up to 3 requests per second.
  curl -X POST -H "Content-Type: application/json" http://localhost:8182/v2/frontends/f1/middlewares -d '{
     "Middleware": {
@@ -872,14 +872,14 @@ Circuit Breakers
 .. figure::  _static/img/CircuitStandby.png
    :align:   left
 
-Circuit breaker is a special middleware that is designed to provide a fail-over action in case if service has degraded. 
+Circuit breaker is a special middleware that is designed to provide a fail-over action in case if service has degraded.
 It is very helpful to prevent cascading failures - where the failure of the one service leads to failure of another.
 Circuit breaker observes requests statistics and checks the stats against special error condition.
 
 .. figure::  _static/img/CircuitTripped.png
    :align:   left
 
-In case if condition matches, CB activates the fallback scenario: returns the response code or redirects the request to another frontend. 
+In case if condition matches, CB activates the fallback scenario: returns the response code or redirects the request to another frontend.
 
 **Circuit Breaker states**
 
@@ -918,10 +918,10 @@ Response fallback will tell CB to reply with a predefined response instead of fo
 .. code-block:: javascript
 
  {
-    "Type": "response", 
+    "Type": "response",
     "Action": {
        "ContentType": "text/plain",
-       "StatusCode": 400, 
+       "StatusCode": 400,
        "Body": "Come back later"
     }
  }
@@ -935,7 +935,7 @@ Redirect fallback will redirect the request to another frontend.
 .. code-block:: javascript
 
  {
-    "Type": "redirect", 
+    "Type": "redirect",
     "Action": {
        "URL": "https://example.com/fallback"
     }
@@ -1007,7 +1007,7 @@ Circuit breaker setup is can be done via Etcd, command line or API:
               "Middleware":{
                  "Condition":"NetworkErrorRatio() > 0.5",
                  "Fallback":{
-                    "Type": "response", 
+                    "Type": "response",
                     "Action": {"StatusCode": 400, "Body": "Come back later"}
                  },
                  "FallbackDuration": 10000000000,
@@ -1028,14 +1028,14 @@ This sections below contain all the steps required to enable TLS support in Vulc
 Managing certificates
 ~~~~~~~~~~~~~~~~~~~~~
 
-Vulcand encrypts certificates when storing them in the backends and uses `Nacl secretbox <https://godoc.org/code.google.com/p/go.crypto/nacl/secretbox>`_ to seal the data. 
+Vulcand encrypts certificates when storing them in the backends and uses `Nacl secretbox <https://godoc.org/code.google.com/p/go.crypto/nacl/secretbox>`_ to seal the data.
 The running server acts as an encryption/decryption point when reading and writing certificates.
 
 This special key has to be generated by Vulcand using command line utility:
 
 **Setting up seal key**
 
-.. code-block:: bash 
+.. code-block:: bash
 
  $ vctl secret new_key
 
@@ -1078,14 +1078,14 @@ Setting certificate via etcd is slightly different from CLI and API:
 OCSP
 ~~~~
 
-`Online Certificate Status Protocol <http://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol>`_ is a protocol for certificate revocation checking. Vulcand checks OCSP status in the background and 
-includes the OCSP staple response in the TLS handshake when this feature turned on. 
+`Online Certificate Status Protocol <http://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol>`_ is a protocol for certificate revocation checking. Vulcand checks OCSP status in the background and
+includes the OCSP staple response in the TLS handshake when this feature turned on.
 By default it is turned off, mostly because it provides `questionable benefits <https://www.imperialviolet.org/2014/04/19/revchecking.html>`_.
 
 .. code-block:: etcd
 
  # Set keypair and OCSP settings
- etcdctl set /vulcand/hosts/localhost/host '{"Settings": 
+ etcdctl set /vulcand/hosts/localhost/host '{"Settings":
      {"KeyPair": {...}, "OCSP":{"Enabled":true,"Period":"1h0m0s","Responders":[],"SkipSignatureCheck":false}}}'
 
 .. code-block:: cli
@@ -1105,10 +1105,10 @@ By default it is turned off, mostly because it provides `questionable benefits <
 
  #set keypair and OCSP settings
  curl -X POST -H "Content-Type: application/json" http://localhost:8182/v2/hosts\
-      -d '{"Host": { 
-             "Name": "localhost", 
+      -d '{"Host": {
+             "Name": "localhost",
              "Settings": {
-                "KeyPair": {"Cert": "base64", Key: "base64"}, 
+                "KeyPair": {"Cert": "base64", Key: "base64"},
                  "OCSP":{
                      "Enabled":true,
                      "Period":"1h0m0s",
@@ -1129,7 +1129,7 @@ Not all clients support SNI, or sometimes host name is not available. In this ca
 
 Session Tickets
 ~~~~~~~~~~~~~~~
-`Session tickets <http://en.wikipedia.org/wiki/Transport_Layer_Security#Session_tickets>`_ is a way to resume TLS connection, saving time on a TLS handshake. 
+`Session tickets <http://en.wikipedia.org/wiki/Transport_Layer_Security#Session_tickets>`_ is a way to resume TLS connection, saving time on a TLS handshake.
 Vulcand supports in-memory session tickets cache for HTTPS listeners and backend pools. Session tickets are enabled by default
 
 .. code-block:: etcd
@@ -1147,15 +1147,15 @@ Vulcand supports in-memory session tickets cache for HTTPS listeners and backend
  # Add http listener accepting requests on 127.0.0.1:9443, uses session ticket LRU cache of 1024
  vctl listener upsert --id ls1 --proto=https --net=tcp -addr=127.0.0.1:9443\
       -tlsSessionCache=LRU -tlsSessionCacheCapacity=1024
-   
+
 
 
 .. code-block:: api
 
  # Add http listener accepting requests on 127.0.0.1:443, uses session ticket LRU cache of 1024
  curl -X POST -H "Content-Type: application/json" http://localhost:8182/v2/listeners\
-      -d '{"Listener": 
-             {"Id": "ls1", "Protocol":"https", 
+      -d '{"Listener":
+             {"Id": "ls1", "Protocol":"https",
               "Address":{"Network":"tcp", "Address":"127.0.0.1:443"},
               "Settings":{
                  "TLS":{
@@ -1217,7 +1217,7 @@ Here's an example of how to configure cipher suites for HTTPS listener
  # Add http listener accepting requests on 127.0.0.1:443 with customized cipher suite list
  vctl listener upsert --id ls1 --proto=https --net=tcp -addr=127.0.0.1:9443\
        --tlsCS=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 --tlsCS=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
- 
+
 
 .. code-block:: api
 
@@ -1262,7 +1262,7 @@ Here's an example on how to set these options for HTTPS listener. Note that you 
  # Add http listener accepting requests on 127.0.0.1:9443 with customized cipher suite list
  vctl listener upsert --id ls1 --proto=https --net=tcp -addr=127.0.0.1:9443\
      --tlsSkipVerify --tlsSessionTicketsOff --tlsMinV=VersionTLS10 --tlsMaxV=VersionTLS11 --tlsPreferServerCS
- 
+
 
 .. code-block:: api
 
@@ -1302,7 +1302,7 @@ Once we have the certificate set, we can create HTTPS listeners for the host:
 
  # Add http listener accepting requests on 127.0.0.1:443
  curl -X POST -H "Content-Type: application/json" http://localhost:8182/v2/listeners\
-      -d '{"Listener": 
+      -d '{"Listener":
              {"Id": "ls1", "Protocol":"https", "Address":{"Network":"tcp", "Address":"127.0.0.1:443"}}}'
 
 
@@ -1335,7 +1335,7 @@ Here's how you can modify TLS settings for a backend:
 
  # Upsert https backend, choosing to ignore certificate checks and setting min and max TLS version
  curl -X POST -H "Content-Type: application/json" http://localhost:8182/v2/backends\
-      -d '{"Backend": 
+      -d '{"Backend":
              {"Id":"b1","Type":"http",
               "Settings":{
                  "TLS":{
@@ -1346,67 +1346,6 @@ Here's how you can modify TLS settings for a backend:
 
 
 
-Metrics
---------
-
-Metrics are provided for frontends and servers:
-
-.. code-block:: javascript
-
- {
-   "Verdict":{
-      "IsBad":false,    // Verdict will specify if there's something wrong with the server
-      "Anomalies":null  // Anomalies can be populated if Vulcand detects something unusual
-   },
-   "Counters":{             // Counters in a rolling time window
-      "Period":10000000000, // Measuring period in ns
-      "NetErrors":6,        // Network errors
-      "Total":78,           // Total requests
-      "StatusCodes":[
-         {
-            "Code":400,     // Status codes recorded
-            "Count":7      
-         },
-         {
-            "Code":429,
-            "Count":67
-         }
-      ]
-   },
-   "LatencyBrackets":[ // Latency brackets recorded for the server or frontend
-      {
-         "Quantile":99,
-         "Value":172000  // microsecond resolution
-      },
-      {
-         "Quantile":99.9,
-         "Value":229000
-      }
-   ]
- }
-
-
-Vulcand provides real-time metrics via API and command line.
-
-.. code-block:: etcd
-
- # top acts like a standard linux top command, refreshing top active frontends every second.
- vctl top
-
-.. code-block:: api
-
- # top frontends
- curl http://localhost:8182/v2/top/frontends?limit=100
-
- # top servers
- curl http://localhost:8182/v2/top/servers?limit=100
-
-.. code-block:: cli
-
- # vctl top acts like a standard linux top command, refreshing top active frontends every second.
- vctl top
- # -b flag will show top only for frontends and servers that are associated with backend b1
- vctl top -b b1
 
 Logging
 -------
@@ -1414,7 +1353,7 @@ Logging
 Vulcand supports logging levels:
 
 .. code-block:: bash
- 
+
  INFO  # all output
  WARN  # warnings and errors only (default)
  ERROR # errors only
@@ -1424,7 +1363,7 @@ You can change the real time logging output by using ``set_severity`` command:
 .. code-block:: etcd
 
   vctl log set_severity -s=INFO
-  
+
 .. code-block:: api
 
   curl -X PUT http://localhost:8182/v1/log/severity -F severity=INFO
@@ -1438,7 +1377,7 @@ You can check current severity using ``get_severity`` command:
 .. code-block:: etcd
 
   vctl log get_severity
-  
+
 .. code-block:: api
 
   curl http://localhost:8182/v1/log/severity
@@ -1459,7 +1398,7 @@ Usage of vulcand
 .. code-block:: sh
 
  vulcand
-  
+
   -apiInterface="":              # apiInterface - interface for API
   -apiPort=8182                  # apiPort - port for API
 
@@ -1469,8 +1408,8 @@ Usage of vulcand
   -log="console"                 # log - syslog or console
   -logSeverity="WARN"            # log severity, INFO, WARN or ERROR
   -pidPath=""                    # path to write PID
-  
-  
+
+
   -sealKey=""                    # sealKey is used to store encrypted data in the backend,
                                  # use 'vctl secret new_key' to create a new key.
 
@@ -1488,7 +1427,7 @@ In case if you need to upgrade the binary on the fly, you can now use signals to
 Here's how it works:
 
 * Replace the binary with a new version
-* Send ``USR2`` signal to a running vulcand instance 
+* Send ``USR2`` signal to a running vulcand instance
 
 .. code-block:: sh
 
@@ -1501,7 +1440,7 @@ Here's how it works:
   4938 pts/12   Sl+    0:04 vulcand
   10459 pts/12   Sl+    0:01 vulcand
 
-Parent vulcand process forks the child process and passes all listening sockets file descriptors to the child. 
+Parent vulcand process forks the child process and passes all listening sockets file descriptors to the child.
 Child process is now serving the requests along with parent process.
 
 * Check the logs for errors
@@ -1604,7 +1543,7 @@ Manual installation
 
 .. note:: You have to install go>=1.3.1 and Etcd before installing vulcand:
 
-Install: 
+Install:
 
 .. code-block:: sh
 

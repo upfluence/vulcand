@@ -91,51 +91,6 @@ func (s *Supervisor) GetFiles() ([]*proxy.FileDescriptor, error) {
 	return []*proxy.FileDescriptor{}, nil
 }
 
-func (s *Supervisor) FrontendStats(key engine.FrontendKey) (*engine.RoundTripStats, error) {
-	p := s.getCurrentProxy()
-	if p != nil {
-		return p.FrontendStats(key)
-	}
-	return nil, fmt.Errorf("no current proxy")
-}
-
-func (s *Supervisor) ServerStats(key engine.ServerKey) (*engine.RoundTripStats, error) {
-	p := s.getCurrentProxy()
-	if p != nil {
-		return p.ServerStats(key)
-	}
-	return nil, fmt.Errorf("no current proxy")
-}
-
-func (s *Supervisor) BackendStats(key engine.BackendKey) (*engine.RoundTripStats, error) {
-	p := s.getCurrentProxy()
-	if p != nil {
-		return p.BackendStats(key)
-	}
-	return nil, fmt.Errorf("no current proxy")
-}
-
-// TopFrontends returns locations sorted by criteria (faulty, slow, most used)
-// if hostname or backendId is present, will filter out locations for that host
-// or backendId.
-func (s *Supervisor) TopFrontends(key *engine.BackendKey) ([]engine.Frontend, error) {
-	p := s.getCurrentProxy()
-	if p != nil {
-		return p.TopFrontends(key)
-	}
-	return nil, fmt.Errorf("no current proxy")
-}
-
-// TopServers returns endpoints sorted by criteria (faulty, slow, mos used)
-// if backendId is not empty, will filter out endpoints for that backendId.
-func (s *Supervisor) TopServers(key *engine.BackendKey) ([]engine.Server, error) {
-	p := s.getCurrentProxy()
-	if p != nil {
-		return p.TopServers(key)
-	}
-	return nil, fmt.Errorf("no current proxy")
-}
-
 func (s *Supervisor) getCurrentProxy() proxy.Proxy {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()

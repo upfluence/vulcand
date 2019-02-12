@@ -12,12 +12,10 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
-	"time"
 
 	logrus_logstash "github.com/bshuster-repo/logrus-logstash-hook"
 	etcd "github.com/coreos/etcd/client"
 	"github.com/gorilla/mux"
-	"github.com/mailgun/metrics"
 	log "github.com/sirupsen/logrus"
 	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
 	"github.com/vulcand/vulcand/api"
@@ -88,15 +86,14 @@ func Run(registry *plugin.Registry) error {
 }
 
 type Service struct {
-	client        etcd.Client
-	options       Options
-	registry      *plugin.Registry
-	errorC        chan error
-	supervisor    *supervisor.Supervisor
-	metricsClient metrics.Client
-	apiServer     *graceful.Server
-	ng            engine.Engine
-	stapler       stapler.Stapler
+	client     etcd.Client
+	options    Options
+	registry   *plugin.Registry
+	errorC     chan error
+	supervisor *supervisor.Supervisor
+	apiServer  *graceful.Server
+	ng         engine.Engine
+	stapler    stapler.Stapler
 }
 
 func NewService(options Options, registry *plugin.Registry) *Service {
@@ -113,16 +110,6 @@ func (s *Service) Start(controlC chan ControlCode) error {
 
 	if s.options.PidPath != "" {
 		ioutil.WriteFile(s.options.PidPath, []byte(fmt.Sprint(os.Getpid())), 0644)
-	}
-
-	if s.options.MetricsClient != nil {
-		s.metricsClient = s.options.MetricsClient
-	} else if s.options.StatsdAddr != "" {
-		var err error
-		s.metricsClient, err = metrics.NewWithOptions(s.options.StatsdAddr, s.options.StatsdPrefix, metrics.Options{UseBuffering: true})
-		if err != nil {
-			return err
-		}
 	}
 
 	apiFile, muxFiles, err := s.getFiles()
@@ -145,10 +132,6 @@ func (s *Service) Start(controlC chan ControlCode) error {
 	go func() {
 		s.errorC <- s.startApi(apiFile)
 	}()
-
-	if s.metricsClient != nil {
-		go s.reportSystemMetrics()
-	}
 
 	sigC := make(chan os.Signal, 1024)
 	signal.Notify(sigC, syscall.SIGCHLD)
@@ -388,20 +371,6 @@ func (s *Service) newEngine() error {
 	return err
 }
 
-func (s *Service) reportSystemMetrics() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Infof("Recovered in reportSystemMetrics", r)
-		}
-	}()
-	for {
-		s.metricsClient.ReportRuntimeMetrics("sys", 1.0)
-		// we have 256 time buckets for gc stats, GC is being executed every 4ms on average
-		// so we have 256 * 4 = 1024 around one second to report it. To play safe, let's report every 300ms
-		time.Sleep(300 * time.Millisecond)
-	}
-}
-
 func (s *Service) newProxy(id int) (proxy.Proxy, error) {
 
 	cacheProvider := s.registry.GetCacheProvider()
@@ -413,7 +382,6 @@ func (s *Service) newProxy(id int) (proxy.Proxy, error) {
 	}
 
 	return builder.NewProxy(id, s.stapler, proxy.Options{
-		MetricsClient:      s.metricsClient,
 		DialTimeout:        s.options.EndpointDialTimeout,
 		ReadTimeout:        s.options.ServerReadTimeout,
 		WriteTimeout:       s.options.ServerWriteTimeout,
@@ -432,7 +400,7 @@ func (s *Service) startApi(file *proxy.FileDescriptor) error {
 	addr := fmt.Sprintf("%s:%d", s.options.ApiInterface, s.options.ApiPort)
 
 	router := mux.NewRouter()
-	api.InitProxyController(s.ng, s.supervisor, router)
+	api.InitProxyController(s.ng, router)
 
 	server := &http.Server{
 		Addr:           addr,

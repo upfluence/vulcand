@@ -1,7 +1,6 @@
 package command
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 
@@ -65,18 +64,6 @@ func (cmd *Command) printServers(srvs []engine.Server) {
 func (cmd *Command) printServer(s *engine.Server) {
 	fmt.Fprintf(cmd.out, "\n[Server]\n")
 	writeS(cmd.out, serversView([]engine.Server{*s}))
-}
-
-func (cmd *Command) printOverview(frontend []engine.Frontend, servers []engine.Server) {
-	out := &bytes.Buffer{}
-	fmt.Fprintf(out, "\n[Frontend]\n")
-	out.WriteString(frontendsOverview(frontend))
-	fmt.Fprintf(cmd.out, out.String())
-
-	out = &bytes.Buffer{}
-	fmt.Fprintf(out, "\n[Servers]\n")
-	out.WriteString(serversOverview(servers))
-	fmt.Fprintf(cmd.out, out.String())
 }
 
 func (cmd *Command) printBackends(bs []engine.Backend) {

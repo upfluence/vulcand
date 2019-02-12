@@ -16,13 +16,6 @@ func (s *ArgsSuite) TestFindVulcanUrl(c *C) {
 	c.Assert(args, DeepEquals, []string{"vctl"})
 }
 
-func (s *ArgsSuite) TestFindDefaults(c *C) {
-	url, args, err := findVulcanUrl([]string{"vctl", "status"})
-	c.Assert(err, IsNil)
-	c.Assert(url, Equals, "http://localhost:8182")
-	c.Assert(args, DeepEquals, []string{"vctl", "status"})
-}
-
 func (s *ArgsSuite) TestFindMiddle(c *C) {
 	url, args, err := findVulcanUrl([]string{"vctl", "endpoint", "-vulcan", "http://yo", "rm"})
 	c.Assert(err, IsNil)

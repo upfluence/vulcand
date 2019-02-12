@@ -12,10 +12,6 @@ import (
 	"github.com/vulcand/vulcand/engine/memng"
 	"github.com/vulcand/vulcand/plugin/connlimit"
 	"github.com/vulcand/vulcand/plugin/registry"
-	"github.com/vulcand/vulcand/proxy"
-	"github.com/vulcand/vulcand/proxy/builder"
-	"github.com/vulcand/vulcand/stapler"
-	"github.com/vulcand/vulcand/supervisor"
 	"github.com/vulcand/vulcand/testutils"
 	. "gopkg.in/check.v1"
 )
@@ -31,16 +27,10 @@ type ApiSuite struct {
 var _ = Suite(&ApiSuite{})
 
 func (s *ApiSuite) SetUpTest(c *C) {
-	newProxy := func(id int) (proxy.Proxy, error) {
-		return builder.NewProxy(id, stapler.New(), proxy.Options{})
-	}
-
 	s.ng = memng.New(registry.GetRegistry())
 
-	sv := supervisor.New(newProxy, s.ng, supervisor.Options{})
-
 	router := mux.NewRouter()
-	InitProxyController(s.ng, sv, router)
+	InitProxyController(s.ng, router)
 	s.testServer = httptest.NewServer(router)
 	s.client = NewClient(s.testServer.URL, registry.GetRegistry())
 }
