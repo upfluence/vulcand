@@ -68,6 +68,14 @@ type Options struct {
 	Scope                     stats.Scope
 }
 
+func (o Options) GetScope() stats.Scope {
+	if o.Scope == nil {
+		return stats.RootScope(stats.NewStaticCollector())
+	}
+
+	return o.Scope
+}
+
 type NewProxyFn func(id int) (Proxy, error)
 
 type FileDescriptor struct {

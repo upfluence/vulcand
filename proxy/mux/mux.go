@@ -111,7 +111,7 @@ func New(id int, st stapler.Stapler, o proxy.Options) (*mux, error) {
 		stapleUpdatesC: make(chan *stapler.StapleUpdated),
 		stopC:          make(chan struct{}),
 		stapler:        st,
-		scope:          o.Scope,
+		scope:          o.GetScope(),
 		autoCertCache:  o.CacheProvider.GetAutoCertCache(),
 	}
 
