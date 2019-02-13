@@ -46,10 +46,6 @@
   name = "github.com/gorilla/mux"
 
 [[constraint]]
-  revision = "2b3c4565aafdcd40c8069e50de08ac5379787943"
-  name = "github.com/mailgun/metrics"
-
-[[constraint]]
   name = "github.com/pkg/errors"
   version = "0.8.0"
 
