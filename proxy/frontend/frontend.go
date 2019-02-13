@@ -113,7 +113,7 @@ type T struct {
 // New returns a new frontend instance.
 func New(cfg engine.Frontend, be *backend.T, opts proxy.Options,
 	mwCfgs map[engine.MiddlewareKey]engine.Middleware,
-	listeners plugin.FrontendListeners, scope stats.Scope,
+	listeners plugin.FrontendListeners,
 ) *T {
 	if mwCfgs == nil {
 		mwCfgs = make(map[engine.MiddlewareKey]engine.Middleware)
@@ -124,7 +124,7 @@ func New(cfg engine.Frontend, be *backend.T, opts proxy.Options,
 		mwCfgs:    mwCfgs,
 		backend:   be,
 		listeners: listeners,
-		scope: scope.Scope(
+		scope: opts.GetScope().Scope(
 			"requests",
 			map[string]string{"frontend": cfg.Id, "backend": be.Key().Id},
 		),
