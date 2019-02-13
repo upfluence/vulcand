@@ -5,20 +5,94 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"github.com/upfluence/stats"
 	"github.com/vulcand/oxy/buffer"
 	"github.com/vulcand/oxy/forward"
 	"github.com/vulcand/oxy/roundrobin"
 	"github.com/vulcand/oxy/stream"
+	"github.com/vulcand/oxy/utils"
 	"github.com/vulcand/vulcand/engine"
 	"github.com/vulcand/vulcand/plugin"
 	"github.com/vulcand/vulcand/proxy"
 	"github.com/vulcand/vulcand/proxy/backend"
 )
+
+type statsHandler struct {
+	next http.Handler
+
+	total    stats.CounterVector
+	started  stats.Counter
+	duration stats.Histogram
+}
+
+type srvsStatsHandler struct {
+	s    stats.Scope
+	next http.Handler
+
+	mu   sync.RWMutex
+	srvs map[backend.SrvURLKey]*statsHandler
+}
+
+func newSrvsStatsHandler(h http.Handler, s stats.Scope) *srvsStatsHandler {
+	return &srvsStatsHandler{
+		s:    s,
+		next: h,
+		srvs: make(map[backend.SrvURLKey]*statsHandler),
+	}
+}
+
+func newStatsHandler(h http.Handler, s stats.Scope) *statsHandler {
+	return &statsHandler{
+		next:     h,
+		total:    s.CounterVector("total", []string{"status"}),
+		started:  s.Counter("started_total"),
+		duration: s.Histogram("duration_seconds"),
+	}
+}
+
+func (ssh *srvsStatsHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	ssh.mu.RLock()
+	srv := ssh.srvs[backend.NewSrvURLKey(req.URL)]
+	ssh.mu.RUnlock()
+
+	srv.ServeHTTP(w, req)
+}
+
+func (sh *statsHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	sh.started.Inc()
+
+	t0 := time.Now()
+	pw := utils.NewProxyWriter(w)
+
+	sh.next.ServeHTTP(pw, req)
+	d := time.Since(t0)
+
+	sh.total.WithLabels(strconv.Itoa(pw.StatusCode())).Inc()
+	sh.duration.Record(d.Seconds())
+}
+
+func (ssh *srvsStatsHandler) UpsertServer(beSrv backend.Srv) {
+	ssh.mu.Lock()
+	defer ssh.mu.Unlock()
+
+	ssh.srvs[beSrv.URLKey()] = newStatsHandler(
+		ssh.next,
+		ssh.s.Scope("server", map[string]string{"server": beSrv.Cfg().Id}),
+	)
+}
+
+func (ssh *srvsStatsHandler) RemoveServer(beSrvURLKey backend.SrvURLKey) {
+	ssh.mu.Lock()
+	defer ssh.mu.Unlock()
+
+	delete(ssh.srvs, beSrvURLKey)
+}
 
 // T represents a frontend instance. It implements http.Handler interface to be
 // used with an http.Server. The implementation takes measures to collect round
@@ -32,12 +106,14 @@ type T struct {
 	backend   *backend.T
 	handler   http.Handler
 	listeners plugin.FrontendListeners
+	scope     stats.Scope
+	sh        *srvsStatsHandler
 }
 
 // New returns a new frontend instance.
 func New(cfg engine.Frontend, be *backend.T, opts proxy.Options,
 	mwCfgs map[engine.MiddlewareKey]engine.Middleware,
-	listeners plugin.FrontendListeners,
+	listeners plugin.FrontendListeners, scope stats.Scope,
 ) *T {
 	if mwCfgs == nil {
 		mwCfgs = make(map[engine.MiddlewareKey]engine.Middleware)
@@ -48,6 +124,10 @@ func New(cfg engine.Frontend, be *backend.T, opts proxy.Options,
 		mwCfgs:    mwCfgs,
 		backend:   be,
 		listeners: listeners,
+		scope: scope.Scope(
+			"requests",
+			map[string]string{"frontend": cfg.Id, "backend": be.Key().Id},
+		),
 	}
 	return &fe
 }
@@ -176,8 +256,14 @@ func (fe *T) rebuild() error {
 		forward.StreamingFlushInterval(time.Duration(httpCfg.StreamFlushIntervalNanoSecs)*time.Nanosecond),
 		forward.StateListener(fe.listeners.ConnTck))
 
+	if err != nil {
+		return errors.Wrap(err, "cannot create forwarder")
+	}
+
+	sh := newSrvsStatsHandler(fwd, fe.scope)
+
 	// Add a load balancer to the handlers chain.
-	rr, err := roundrobin.New(fwd, roundrobin.RoundRobinRequestRewriteListener(fe.listeners.RrRewriteListener))
+	rr, err := roundrobin.New(sh, roundrobin.RoundRobinRequestRewriteListener(fe.listeners.RrRewriteListener))
 	if err != nil {
 		return errors.Wrap(err, "cannot create load balancer")
 	}
@@ -231,14 +317,15 @@ func (fe *T) rebuild() error {
 		return errors.Wrap(err, "failed to create handler")
 	}
 
-	syncServers(rb, beSrvs)
+	syncServers(rb, beSrvs, sh)
 
-	fe.handler = topHandler
+	fe.sh = sh
+	fe.handler = newStatsHandler(topHandler, fe.scope.Scope("frontend", nil))
 	return nil
 }
 
 // syncServers syncs backend servers and rebalancer state.
-func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv) {
+func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv, watcher *srvsStatsHandler) {
 	// First, collect and parse servers to add
 	newServers := make(map[backend.SrvURLKey]backend.Srv)
 	for _, newBeSrv := range beSrvs {
@@ -257,6 +344,8 @@ func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv) {
 			if err := balancer.UpsertServer(newBeSrv.URL()); err != nil {
 				log.Errorf("Failed to add %v, err: %s", newBeSrv.URL(), err)
 			}
+
+			watcher.UpsertServer(newBeSrv)
 		}
 	}
 
@@ -266,6 +355,8 @@ func syncServers(balancer *roundrobin.Rebalancer, beSrvs []backend.Srv) {
 			if err := balancer.RemoveServer(oldBeSrvURL); err != nil {
 				log.Errorf("Failed to remove %v, err: %v", oldBeSrvURL, err)
 			}
+
+			watcher.RemoveServer(oldBeSrvURLKey)
 		}
 	}
 }
