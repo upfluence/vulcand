@@ -9,6 +9,7 @@ import (
 
 	"github.com/mailgun/timetools"
 	log "github.com/sirupsen/logrus"
+	"github.com/upfluence/stats"
 	"github.com/vulcand/vulcand/conntracker"
 	"github.com/vulcand/vulcand/engine"
 	"github.com/vulcand/vulcand/plugin"
@@ -64,6 +65,7 @@ type Options struct {
 	IncomingConnectionTracker conntracker.ConnectionTracker
 	FrontendListeners         plugin.FrontendListeners
 	CacheProvider             cacheprovider.T
+	Scope                     stats.Scope
 }
 
 type NewProxyFn func(id int) (Proxy, error)

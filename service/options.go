@@ -7,6 +7,8 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/upfluence/stats"
+	"github.com/upfluence/stats/prometheus"
 )
 
 type Options struct {
@@ -44,7 +46,8 @@ type Options struct {
 	DefaultListener    bool
 	TrustForwardHeader bool
 
-	MemProfileRate int
+	Scope     stats.Scope
+	Collector stats.Collector
 }
 
 type SeverityFlag struct {
@@ -131,7 +134,8 @@ func ParseCommandLine() (options Options, err error) {
 	flag.BoolVar(&options.DefaultListener, "default-listener", true, "Enables the default listener on startup (Default value: true)")
 	flag.BoolVar(&options.TrustForwardHeader, "trustForwardHeader", false, "Whether X-Forwarded-XXX headers should be trusted")
 
-	flag.IntVar(&options.MemProfileRate, "memProfileRate", 0, "Heap profile rate in bytes (disabled if 0)")
+	options.Collector = prometheus.NewDefaultCollector()
+	options.Scope = stats.RootScope(options.Collector).Scope("vulcand", nil)
 
 	flag.Parse()
 	options, err = validateOptions(options)

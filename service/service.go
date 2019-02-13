@@ -7,10 +7,10 @@ import (
 	"log/syslog"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"syscall"
 
 	logrus_logstash "github.com/bshuster-repo/logrus-logstash-hook"
@@ -70,9 +70,6 @@ func Run(registry *plugin.Registry) error {
 	options, err := ParseCommandLine()
 	if err != nil {
 		return fmt.Errorf("failed to parse command line: %s", err)
-	}
-	if options.MemProfileRate > 0 {
-		runtime.MemProfileRate = options.MemProfileRate
 	}
 
 	service := NewService(options, registry)
@@ -393,6 +390,7 @@ func (s *Service) newProxy(id int) (proxy.Proxy, error) {
 		IncomingConnectionTracker: s.registry.GetIncomingConnectionTracker(),
 		FrontendListeners:         s.registry.GetFrontendListeners(),
 		CacheProvider:             cacheProvider,
+		Scope:                     s.options.Scope,
 	})
 }
 
@@ -408,6 +406,17 @@ func (s *Service) startApi(file *proxy.FileDescriptor) error {
 		ReadTimeout:    s.options.ServerReadTimeout,
 		WriteTimeout:   s.options.ServerWriteTimeout,
 		MaxHeaderBytes: 1 << 20,
+	}
+
+	router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	router.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	router.HandleFunc("/debug/pprof/heap", pprof.Index)
+	router.PathPrefix("/debug/pprof/").Handler(http.HandlerFunc(pprof.Index))
+
+	if h, ok := s.options.Collector.(interface{ Handler() http.Handler }); ok {
+		router.Handle("/metrics", h.Handler())
 	}
 
 	var listener net.Listener
